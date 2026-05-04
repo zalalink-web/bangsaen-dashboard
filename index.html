@@ -129,6 +129,12 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
 .comp-cell-mid .comp-mid-lbl{color:var(--text-1)}
 .comp-mid-note{font-size:10px;color:var(--text-3);margin-top:2px}
 .comp-divider{grid-column:1/-1;background:linear-gradient(90deg,rgba(59,130,246,.08),rgba(100,116,139,.08),rgba(34,197,94,.08));padding:8px 20px;font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.12em;text-transform:uppercase;text-align:center;border-top:1px solid var(--divider)}
+.ass-row-cell .comp-cell{padding:10px 16px}
+.ass-val{font-size:14px;font-weight:600;font-family:var(--mono);letter-spacing:-.3px}
+.ass-val-led{color:var(--blue-d)}
+.ass-val-bb{color:var(--green-d)}
+.ass-row-cell.ass-shared .comp-cell-led,.ass-row-cell.ass-shared .comp-cell-bb{background:var(--bg-2,#f8fafc);opacity:.85}
+.ass-row-cell.ass-shared .ass-val-led,.ass-row-cell.ass-shared .ass-val-bb{color:var(--text-2)}
 @media(max-width:780px){
   .comp-row{grid-template-columns:1fr 1fr}
   .comp-head-mid{display:none}
@@ -619,10 +625,10 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
     <div class="comp-table" id="comp-table"></div>
   </div>
 
-  <!-- ASSUMPTIONS -->
+  <!-- ASSUMPTIONS — split LED vs BB -->
   <div>
     <div class="sec-hdr"><span>Assumptions</span></div>
-    <div class="ass-row" id="ass-row"></div>
+    <div class="comp-table" id="ass-table"></div>
   </div>
 
   <!-- SENSITIVITY -->
@@ -833,20 +839,51 @@ function renderKPI(){
   if(beBb)  beBb.textContent  = 'คืนทุนปีที่ '+(be_b||'—');
 }
 
-// ═══ ASSUMPTIONS ═══
+// ═══ ASSUMPTIONS — 2-side compare ═══
 function renderAss(){
-  const items=[
-    ['WACC',fP(D.wacc)],['TAX',fP(D.tax)],['Profit Share',fP(D.ps)],
-    ['Dep LED',D.dep_l+' ปี'],['Dep BB',D.dep_b+' ปี'],
-    ['Ratecard LED','฿'+Math.round(D.rate).toLocaleString()],
-    ['Pack LED',D.pack+' แพ็ก'],['Occ LED',fP(D.occ_l)],
-    ['Rental LED','฿'+Math.round(D.rent_l/1000)+'K'],['NP BB/ปี',fM(D.np_b)],
+  const fK = n => '฿'+Math.round(n/1000).toLocaleString()+'K';
+  const occL = +(document.getElementById('s-occ')?.value || D.occ_l*100)/100;
+  const bbCount = (typeof dashBBSelected !== 'undefined') ? dashBBSelected.size : 13;
+
+  const rows = [
+    {section:'SHARED — ใช้ร่วมกันทั้ง 2 Option'},
+    {lbl:'WACC',note:'ต้นทุนเงินทุน', vl:fP(D.wacc,0), vb:fP(D.wacc,0), shared:true},
+    {lbl:'TAX Rate', note:'ภาษีนิติบุคคล', vl:fP(D.tax,0), vb:fP(D.tax,0), shared:true},
+    {lbl:'Profit Share', note:'ส่วนแบ่งกำไร', vl:fP(D.ps,0), vb:fP(D.ps,0), shared:true},
+    {lbl:'S&A', note:'Selling+Admin (% รายได้)', vl:fP(D.sell+D.adm,0), vb:fP(D.sell+D.adm,0), shared:true},
+    {section:'OPTION-SPECIFIC — แตกต่างกันตาม Option'},
+    {lbl:'Ratecard', note:'ค่าโฆษณาต่อหน่วย', vl:'฿'+(D.rate/1000).toFixed(0)+'K/แพ็ก', vb:'฿18–80K/ป้าย'},
+    {lbl:'จำนวนหน่วย', note:'แพ็ก / ป้าย', vl:D.pack+' แพ็ก/เดือน', vb:bbCount+' ป้าย'},
+    {lbl:'Occupancy', note:'อัตราการขาย', vl:fP(occL,0), vb:fP(D.occ_b,0)},
+    {lbl:'Rental', note:'ค่าเช่าพื้นที่/เดือน', vl:fK(D.rent_l), vb:fK(D.rent_b)},
+    {lbl:'OpEx/ปี', note:'ค่าไฟ + ภาษีป้าย', vl:fM(D.opex_l,1), vb:fM(D.opex_b,1)},
+    {lbl:'Depreciation', note:'อายุค่าเสื่อม', vl:D.dep_l+' ปี', vb:D.dep_b+' ปี'},
+    {lbl:'Re-invest', note:'ลงทุนเพิ่มใหม่', vl:'Y6 '+fM(D.cout_l[6],1), vb:'ไม่มี'},
   ];
-  document.getElementById('ass-row').innerHTML=items.map(([l,v])=>`
-    <div class="ass-pill">
-      <div class="ass-lbl">${l}</div>
-      <div class="ass-val">${v}</div>
-    </div>`).join('');
+
+  let html = `
+    <div class="comp-row">
+      <div class="comp-head comp-head-led">ALL LED</div>
+      <div class="comp-head comp-head-mid">Assumption</div>
+      <div class="comp-head comp-head-bb">ALL BB</div>
+    </div>`;
+  rows.forEach(r=>{
+    if(r.section){
+      html += `<div class="comp-divider">${r.section}</div>`;
+      return;
+    }
+    const sharedClass = r.shared ? ' ass-shared' : '';
+    html += `
+      <div class="comp-row ass-row-cell${sharedClass}">
+        <div class="comp-cell comp-cell-led"><span class="ass-val ass-val-led">${r.vl}</span></div>
+        <div class="comp-cell comp-cell-mid">
+          <span class="comp-mid-lbl">${r.lbl}</span>
+          <span class="comp-mid-note">${r.note}</span>
+        </div>
+        <div class="comp-cell comp-cell-bb"><span class="ass-val ass-val-bb">${r.vb}</span></div>
+      </div>`;
+  });
+  document.getElementById('ass-table').innerHTML = html;
 }
 
 // ═══ CALC LED NCF จาก slider ═══
