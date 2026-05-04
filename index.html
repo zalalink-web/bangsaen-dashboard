@@ -86,7 +86,7 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
 .warn-strip{background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:9px 16px;font-size:11px;color:#92400e;display:flex;align-items:center;gap:10px}
 .warn-strip svg{flex-shrink:0;opacity:.7}
 
-/* ═══ KPI CARDS ═══ */
+/* ═══ KPI CARDS (legacy — kept for fallback) ═══ */
 .kpi-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
 .kpi-card{background:var(--card-bg);border-radius:10px;padding:18px 20px;border:1px solid var(--card-border);display:flex;flex-direction:column;gap:10px}
 .kpi-card.hero{border:1.5px solid var(--blue);background:linear-gradient(135deg,rgba(59,130,246,.04),rgba(59,130,246,.01))}
@@ -102,6 +102,38 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
 .kpi-badge{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:4px}
 .kpi-badge-led{background:rgba(59,130,246,.15);color:var(--blue)}
 .kpi-badge-bb{background:rgba(34,197,94,.15);color:var(--green-d)}
+
+/* ═══ COMPARE TABLE — 2-side LED vs BB ═══ */
+.comp-table{background:var(--card-bg);border-radius:12px;border:1px solid var(--card-border);overflow:hidden}
+.comp-row{display:grid;grid-template-columns:1fr 200px 1fr;align-items:stretch;border-top:1px solid var(--divider)}
+.comp-row:first-child{border-top:none}
+.comp-head{padding:18px 20px;font-size:15px;font-weight:700;letter-spacing:.06em;text-align:center;color:#fff}
+.comp-head-led{background:linear-gradient(135deg,#3b82f6,#1e40af)}
+.comp-head-bb{background:linear-gradient(135deg,#22c55e,#15803d)}
+.comp-head-mid{background:#1e293b;color:#e2e8f0;font-size:12px;font-weight:600}
+.comp-cell{padding:18px 20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.comp-cell-led{background:rgba(59,130,246,.04)}
+.comp-cell-bb{background:rgba(34,197,94,.04)}
+.comp-cell-mid{background:var(--bg-2,#f8fafc);color:var(--text-2);text-align:center}
+.comp-num{font-size:22px;font-weight:700;font-family:var(--mono);letter-spacing:-.5px}
+.comp-num-led{color:var(--blue-d)}
+.comp-num-bb{color:var(--green-d)}
+.comp-num-neg{color:#dc2626}
+.comp-row.cost .comp-num{font-size:24px}
+.comp-row.cost .comp-cell-led{background:rgba(59,130,246,.07)}
+.comp-row.cost .comp-cell-bb{background:rgba(34,197,94,.07)}
+.comp-row.result .comp-num{font-size:18px;color:var(--text-2)}
+.comp-row.result .comp-num-led{color:var(--blue)}
+.comp-row.result .comp-num-bb{color:var(--green-d)}
+.comp-mid-lbl{font-size:13px;font-weight:700;color:#fff;background:transparent;text-shadow:none}
+.comp-cell-mid .comp-mid-lbl{color:var(--text-1)}
+.comp-mid-note{font-size:10px;color:var(--text-3);margin-top:2px}
+.comp-divider{grid-column:1/-1;background:linear-gradient(90deg,rgba(59,130,246,.08),rgba(100,116,139,.08),rgba(34,197,94,.08));padding:8px 20px;font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.12em;text-transform:uppercase;text-align:center;border-top:1px solid var(--divider)}
+@media(max-width:780px){
+  .comp-row{grid-template-columns:1fr 1fr}
+  .comp-head-mid{display:none}
+  .comp-cell-mid{grid-column:1/-1;padding:6px 12px;font-size:11px;background:var(--bg-2,#f1f5f9);order:-1}
+}
 
 /* ═══ ASSUMPTIONS ═══ */
 .ass-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
@@ -581,10 +613,10 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
     Revenue ALL LED ฿45.4M = Projection ยังไม่มี Contract · ตัวเลขผูกสูตรจาก PL_LED, PL_BB, CAPEX, ASSUMPTIONS
   </div>
 
-  <!-- KPI -->
+  <!-- COMPARE — LED vs BB head-to-head -->
   <div>
-    <div class="sec-hdr"><span>5 ตัวชี้วัดหลัก</span></div>
-    <div class="kpi-row" id="kpi-row"></div>
+    <div class="sec-hdr"><span>เปรียบเทียบ ALL LED vs ALL BB</span></div>
+    <div class="comp-table" id="comp-table"></div>
   </div>
 
   <!-- ASSUMPTIONS -->
@@ -736,38 +768,69 @@ const fP=(n,d=2)=>isNaN(n)?'—':(n*100).toFixed(d)+'%';
 const cumSum=a=>{const r=[];a.reduce((s,v,i)=>{r[i]=Math.round(s+v);return s+v},0);return r};
 const calcBE=ncf=>{let c=0;for(let i=0;i<ncf.length;i++){c+=ncf[i];if(c>=0)return i}return null};
 
-// ═══ KPI ═══
+// ═══ COMPARE TABLE ═══
 function renderKPI(){
   const ncf_l=D.cin_l.map((v,i)=>v-D.cout_l[i]);
   const ncf_b=D.cin_b.map((v,i)=>v-D.cout_b[i]);
   const be_l=calcBE(ncf_l), be_b=calcBE(ncf_b);
-  const items=[
-    {lbl:'IRR',note:'vs WACC '+fP(D.wacc,0),vl:fP(D.irr_l),vb:fP(D.irr_b),hero:true},
-    {lbl:'NPV',note:'มูลค่าเพิ่มสุทธิ',vl:fM(D.npv_l),vb:fM(D.npv_b)},
-    {lbl:'Break-Even',note:'คืนทุน',vl:be_l?'ปีที่ '+be_l:'—',vb:be_b?'ปีที่ '+be_b:'—'},
-    {lbl:'Capex',note:'เงินลงทุน',vl:fM(D.cap_l,2),vb:fM(D.cap_b,2)},
-    {lbl:'Net Profit Y1',note:'กำไรสุทธิปีแรก',vl:fM(D.np_l),vb:fM(D.np_b)},
+  // Monthly Expense = (rental + opex) / 12
+  const me_l = (D.rent_l*12 + D.opex_l)/12;
+  const me_b = (D.rent_b*12 + D.opex_b)/12;
+  const opex_yr_l = D.rent_l*12 + D.opex_l;
+  const opex_yr_b = D.rent_b*12 + D.opex_b;
+
+  const cls = (v,which) => {
+    if(v==null||isNaN(v)) return '';
+    if(typeof v==='number' && v<0) return 'comp-num-neg';
+    return which==='l'?'comp-num-led':'comp-num-bb';
+  };
+
+  const rows = [
+    {section:'COSTS — เงินลงทุนและค่าใช้จ่าย'},
+    {lbl:'CapEx',note:'เงินลงทุนตั้งต้น',vl:fM(D.cap_l,1),vb:fM(D.cap_b,1),group:'cost'},
+    {lbl:'OpEx / ปี',note:'ค่าใช้จ่ายดำเนินการรวม',vl:fM(opex_yr_l,1),vb:fM(opex_yr_b,1),group:'cost'},
+    {lbl:'Monthly Expense',note:'ค่าใช้จ่าย/เดือน',vl:fM(me_l,1),vb:fM(me_b,1),group:'cost'},
+    {section:'RESULT — ผลลัพธ์การลงทุน'},
+    {lbl:'Net Profit Y1',note:'กำไรสุทธิปีแรก',vl:fM(D.np_l,1),vb:fM(D.np_b,1),vlNum:D.np_l,vbNum:D.np_b,group:'cost'},
+    {lbl:'IRR',note:'vs WACC '+fP(D.wacc,0),vl:fP(D.irr_l),vb:fP(D.irr_b),group:'result'},
+    {lbl:'NPV',note:'มูลค่าเพิ่มสุทธิ',vl:fM(D.npv_l,1),vb:fM(D.npv_b,1),vlNum:D.npv_l,vbNum:D.npv_b,group:'result'},
+    {lbl:'Break-Even',note:'ระยะเวลาคืนทุน',vl:be_l?'ปีที่ '+be_l:'—',vb:be_b?'ปีที่ '+be_b:'—',group:'result'},
   ];
-  document.getElementById('kpi-row').innerHTML=items.map(it=>`
-    <div class="kpi-card${it.hero?' hero':''}">
-      <div>
-        <div class="kpi-lbl">${it.lbl}</div>
-        <span class="kpi-note">${it.note}</span>
-      </div>
-      <div class="kpi-pair">
-        <div class="kpi-item kpi-item-led">
-          <span class="kpi-num kpi-num-led">${it.vl}</span>
-          <span class="kpi-badge kpi-badge-led">LED</span>
+
+  let html = `
+    <div class="comp-row">
+      <div class="comp-head comp-head-led">ALL LED</div>
+      <div class="comp-head comp-head-mid">ตัวชี้วัด</div>
+      <div class="comp-head comp-head-bb">ALL BB</div>
+    </div>`;
+  rows.forEach(r=>{
+    if(r.section){
+      html += `<div class="comp-divider">${r.section}</div>`;
+      return;
+    }
+    const lNeg = r.vlNum!==undefined && r.vlNum<0 ? 'comp-num-neg' : 'comp-num-led';
+    const bNeg = r.vbNum!==undefined && r.vbNum<0 ? 'comp-num-neg' : 'comp-num-bb';
+    html += `
+      <div class="comp-row ${r.group||''}">
+        <div class="comp-cell comp-cell-led">
+          <span class="comp-num ${lNeg}">${r.vl}</span>
         </div>
-        <div class="kpi-item kpi-item-bb">
-          <span class="kpi-num kpi-num-bb">${it.vb}</span>
-          <span class="kpi-badge kpi-badge-bb">BB</span>
+        <div class="comp-cell comp-cell-mid">
+          <span class="comp-mid-lbl">${r.lbl}</span>
+          <span class="comp-mid-note">${r.note}</span>
         </div>
-      </div>
-    </div>`).join('');
+        <div class="comp-cell comp-cell-bb">
+          <span class="comp-num ${bNeg}">${r.vb}</span>
+        </div>
+      </div>`;
+  });
+  document.getElementById('comp-table').innerHTML = html;
+
   // update BE pills
-  document.getElementById('be-led').textContent='คืนทุนปีที่ '+(be_l||'—');
-  document.getElementById('be-bb').textContent='คืนทุนปีที่ '+(be_b||'—');
+  const beLed = document.getElementById('be-led');
+  const beBb = document.getElementById('be-bb');
+  if(beLed) beLed.textContent = 'คืนทุนปีที่ '+(be_l||'—');
+  if(beBb)  beBb.textContent  = 'คืนทุนปีที่ '+(be_b||'—');
 }
 
 // ═══ ASSUMPTIONS ═══
@@ -828,44 +891,15 @@ function sens(){
   npEl.textContent=fM(np);
   npEl.className='lv-num '+(np<0?'lv-neg':'lv-led');
 
-  // Approx IRR/NPV for KPI dynamic update
+  // Approx IRR/NPV for dynamic update
   const {cin,cout}=calcLEDncf(occ,rate);
   const ncf=cin.map((v,i)=>v-cout[i]);
-  // Simple IRR approximation
   const irrApprox=approxIRR(ncf);
   const npvApprox=calcNPV(ncf, D.wacc);
-  const be=calcBE(ncf);
 
-  // Update D temporarily for KPI render
-  const tmpD={...D, rev_l:rev, np_l:Math.round(np),
-    irr_l:irrApprox, npv_l:Math.round(npvApprox)};
-
-  // Re-render KPI with new values
-  const be_b=calcBE(D.cin_b.map((v,i)=>v-D.cout_b[i]));
-  const items=[
-    {lbl:'IRR',note:'vs WACC '+fP(D.wacc,0),vl:fP(irrApprox),vb:fP(D.irr_b),hero:true},
-    {lbl:'NPV',note:'มูลค่าเพิ่มสุทธิ',vl:fM(npvApprox),vb:fM(D.npv_b)},
-    {lbl:'Break-Even',note:'คืนทุน',vl:be?'ปีที่ '+be:'—',vb:be_b?'ปีที่ '+be_b:'—'},
-    {lbl:'Capex',note:'เงินลงทุน',vl:fM(D.cap_l,2),vb:fM(D.cap_b,2)},
-    {lbl:'Net Profit Y1',note:'กำไรสุทธิปีแรก',vl:fM(Math.round(np)),vb:fM(D.np_b)},
-  ];
-  document.getElementById('kpi-row').innerHTML=items.map(it=>`
-    <div class="kpi-card${it.hero?' hero':''}">
-      <div><div class="kpi-lbl">${it.lbl}</div><span class="kpi-note">${it.note}</span></div>
-      <div class="kpi-pair">
-        <div class="kpi-item kpi-item-led">
-          <span class="kpi-num kpi-num-led">${it.vl}</span>
-          <span class="kpi-badge kpi-badge-led">LED</span>
-        </div>
-        <div class="kpi-item kpi-item-bb">
-          <span class="kpi-num kpi-num-bb">${it.vb}</span>
-          <span class="kpi-badge kpi-badge-bb">BB</span>
-        </div>
-      </div>
-    </div>`).join('');
-
-  // Update D with live LED values for proposal sync
+  // Update D with live LED values, then re-render compare table
   D.cin_l=cin; D.rev_l=rev; D.np_l=Math.round(np); D.irr_l=irrApprox; D.npv_l=Math.round(npvApprox);
+  renderKPI();
   updateLEDChart(cin, cout);
   syncProposal();
 }
@@ -1255,15 +1289,14 @@ function initMap(){
 // ═══ PROPOSAL SYNC ═══
 function syncProposal(){
   try{
-    const kpiCards = document.querySelectorAll('#kpi-row .kpi-card');
-    const getKpiVal = (idx, isLed) => {
-      if(!kpiCards[idx]) return null;
-      const nums = kpiCards[idx].querySelectorAll('.kpi-num');
-      return isLed ? nums[0]?.textContent : nums[1]?.textContent;
-    };
-    const irrl = getKpiVal(0,true), irrb = getKpiVal(0,false);
-    const npvl = getKpiVal(1,true), npvb = getKpiVal(1,false);
-    const bel  = getKpiVal(2,true), beb  = getKpiVal(2,false);
+    // Read directly from D (single source of truth)
+    const ncf_l = D.cin_l.map((v,i)=>v-D.cout_l[i]);
+    const ncf_b = D.cin_b.map((v,i)=>v-D.cout_b[i]);
+    const be_l = calcBE(ncf_l), be_b = calcBE(ncf_b);
+    const irrl = fP(D.irr_l), irrb = fP(D.irr_b);
+    const npvl = fM(D.npv_l), npvb = fM(D.npv_b);
+    const bel  = be_l ? 'ปีที่ '+be_l : '—';
+    const beb  = be_b ? 'ปีที่ '+be_b : '—';
     const revl = document.getElementById('lv-rev')?.textContent;
     const npl  = document.getElementById('lv-np')?.textContent;
     const occ  = document.getElementById('l-occ')?.textContent;
