@@ -121,6 +121,11 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
 .sl-name{font-size:11px;color:var(--text-2);min-width:140px}
 .sl-row input[type=range]{flex:1;height:4px;accent-color:var(--blue-d);cursor:pointer}
 .sl-val{font-size:12px;font-weight:600;color:var(--text-1);min-width:72px;text-align:right;font-family:var(--mono)}
+.scenario-btns{display:flex;gap:8px;margin-bottom:14px}
+.scenario-btn{flex:1;padding:6px 0;border-radius:6px;border:1.5px solid;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;background:transparent}
+.scenario-btn.worst{border-color:#ef4444;color:#ef4444}.scenario-btn.worst:hover,.scenario-btn.worst.active{background:#ef4444;color:#fff}
+.scenario-btn.base{border-color:var(--blue-d);color:var(--blue-d)}.scenario-btn.base:hover,.scenario-btn.base.active{background:var(--blue-d);color:#fff}
+.scenario-btn.best{border-color:#22c55e;color:#22c55e}.scenario-btn.best:hover,.scenario-btn.best.active{background:#22c55e;color:#fff}
 .bb-static{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--green-dim);border-radius:8px;border:1px solid rgba(34,197,94,.15)}
 .bb-static-lbl{font-size:11px;color:var(--green-d);flex:1}
 .bb-static-val{font-size:16px;font-weight:600;color:var(--green-d);font-family:var(--mono)}
@@ -598,11 +603,16 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
           <div class="sl-label-row">
             <span class="sl-group-lbl sl-group-lbl-led">ALL LED</span>
           </div>
+          <div class="scenario-btns">
+            <button class="scenario-btn worst" onclick="setScenario('worst')">WORST 50%</button>
+            <button class="scenario-btn base active" onclick="setScenario('base')">BASE 80%</button>
+            <button class="scenario-btn best" onclick="setScenario('best')">BEST 100%</button>
+          </div>
           <div class="sl-group">
             <div class="sl-row">
               <span class="sl-name">Occupancy</span>
-              <input type="range" min="10" max="100" step="5" value="70" id="s-occ" oninput="sens()">
-              <span class="sl-val" id="l-occ">70%</span>
+              <input type="range" min="10" max="100" step="5" value="80" id="s-occ" oninput="setScenario(null);sens()">
+              <span class="sl-val" id="l-occ">80%</span>
             </div>
             <div class="sl-row">
               <span class="sl-name">Ratecard (฿/แพ็ก)</span>
@@ -702,19 +712,21 @@ body{font-family:var(--font);background:var(--body-bg);color:var(--text-1);font-
 const FB={
   // Assumptions
   wacc:.08, tax:.20, sell:.02, adm:.03, dep_l:5, dep_b:10, ps:.30,
-  rate:200000, pack:27, occ_l:.70, occ_b:.60, rent_l:200000,
-  // KPI
-  cap_l:95087068, cap_b:23227712,
+  rate:200000, pack:27, occ_l:.70, occ_b:.60,
+  rent_l:200000, rent_b:100000,   // monthly rental
+  opex_l:8261340, opex_b:658200,  // annual OPEX (electricity + sign-tax)
+  // CapEx ×1.4 markup
+  cap_l:133121895, cap_b:32518797,
   rev_l:45360000, rev_b:7876800,
-  np_l:7511418,   np_b:1849114,
+  np_l:3251517,   np_b:1328813,
   irr_l:.1954,    irr_b:.1236,
   npv_l:49550638, npv_b:4765975,
-  // Cash In Y0–Y10 (NP + Dep) from PL row 29/28
-  cin_l:[0, 26528832,26528832,26528832,26528832,26528832, 25512957,25512957,25512957,25512957,25512957],
-  cin_b:[0,  4171885, 4171885, 4171885, 4171885, 4171885,  4171885, 4171885, 4171885, 4171885, 4171885],
-  // Cash Out Y0–Y10 from PL row 30/29
-  cout_l:[95087068,0,0,0,0,0, 48578040,0,0,0,0],
-  cout_b:[23227712,0,0,0,0,0,0,0,0,0,0],
+  // Cash In — recalculated at init via sens()/updateDashBBKPI()
+  cin_l:[0, 29875896,29875896,29875896,29875896,29875896, 24145984,24145984,24145984,24145984,24145984],
+  cin_b:[0,  4580693, 4580693, 4580693, 4580693, 4580693,  4580693, 4580693, 4580693, 4580693, 4580693],
+  // Cash Out — cout_l[0] and cout_l[6] both ×1.4
+  cout_l:[133121895,0,0,0,0,0, 68009256,0,0,0,0],
+  cout_b:[32518797,0,0,0,0,0,0,0,0,0,0],
 };
 let D={...FB};
 
@@ -776,18 +788,28 @@ function renderAss(){
 
 // ═══ CALC LED NCF จาก slider ═══
 function calcLEDncf(occ, rate){
-  // Cash In = NP + Dep (Dep Y1-5=19017414, Y6-10=16708608)
-  const mult=(1-D.sell-D.adm)*(1-D.tax)*(1-D.ps);
-  const rev=rate*D.pack*occ*12;
-  // NP ≈ rev * mult (simplified from base)
-  const baseNP_y15 = D.np_l;
-  const np_y15 = baseNP_y15 + (rev - D.rev_l)*mult;
-  const np_y610 = np_y15 * (D.np_l>0 ? 8804349/7511418 : 1); // scale Y6-10 ratio
-  const dep_y15=19017414, dep_y610=16708608;
+  const dep_y15 = D.cap_l / D.dep_l;
+  const dep_y610 = D.cout_l[6] / D.dep_l;
+  const rev = rate * D.pack * occ * 12;
+  const sa = (D.sell + D.adm) * rev;
+  const npOf = dep => Math.round((rev - D.rent_l*12 - D.opex_l - dep - sa) * (1-D.tax) * (1-D.ps));
+  const np_y15 = npOf(dep_y15);
+  const np_y610 = npOf(dep_y610);
   const cin=[0];
-  for(let i=1;i<=5;i++) cin.push(Math.round(np_y15+dep_y15));
-  for(let i=6;i<=10;i++) cin.push(Math.round(np_y610+dep_y610));
+  for(let i=1;i<=5;i++) cin.push(np_y15 + Math.round(dep_y15));
+  for(let i=6;i<=10;i++) cin.push(np_y610 + Math.round(dep_y610));
   return {cin, cout:D.cout_l};
+}
+
+// ═══ SCENARIO BUTTONS ═══
+function setScenario(s){
+  const occMap={worst:50, base:80, best:100};
+  document.querySelectorAll('.scenario-btn').forEach(b=>b.classList.remove('active'));
+  if(s && occMap[s]!==undefined){
+    document.getElementById('s-occ').value=occMap[s];
+    document.querySelector('.scenario-btn.'+s).classList.add('active');
+  }
+  sens();
 }
 
 // ═══ SENSITIVITY + UPDATE ALL ═══
@@ -1070,8 +1092,7 @@ function updateBBKPI(){
   const revM = sel.reduce((s,b)=>s+b.rev_month,0);
   const revY = revM*12;
   // Capex proportional
-  const capexFull = 23227712;
-  const capex = bbSelected.size > 0 ? Math.round(capexFull * bbSelected.size / BB_DATA.length) : 0;
+  const capex = bbSelected.size > 0 ? Math.round(FB.cap_b * bbSelected.size / BB_DATA.length) : 0;
   document.getElementById('bbs-count').textContent = bbSelected.size;
   document.getElementById('bbs-rev-m').textContent = fMc(revM);
   document.getElementById('bbs-rev-y').textContent = fMc(revY);
@@ -1106,17 +1127,17 @@ function updateDashBBKPI(){
   const revM = sel.reduce((s,b)=>s+b.rev_month,0);
   const revY = revM*12;
 
-  // Recalculate NP BB based on selected revenue
-  const mult = (1-D.sell-D.adm)*(1-D.tax)*(1-D.ps);
-  const npBB = Math.round(revY * mult);
+  // Proportional capex from FB base (×1.4 already in FB)
+  const capexFull = FB.cap_b;
+  D.cap_b = dashBBSelected.size > 0 ? Math.round(capexFull * dashBBSelected.size / BB_PILLS.length) : 0;
+
+  // Full NP calc: revenue − rental − opex − dep − S&A → ×(1−tax)×(1−ps)
   const dep_b = Math.round(D.cap_b / D.dep_b);
+  const rental_b = D.rent_b * 12;
+  const sa_b = (D.sell + D.adm) * revY;
+  const npBB = Math.round((revY - rental_b - D.opex_b - dep_b - sa_b) * (1-D.tax) * (1-D.ps));
   const cinBB_new = [0,npBB+dep_b,npBB+dep_b,npBB+dep_b,npBB+dep_b,npBB+dep_b,
                        npBB+dep_b,npBB+dep_b,npBB+dep_b,npBB+dep_b,npBB+dep_b];
-  const coutBB_new = [D.cout_b[0],0,0,0,0,0,0,0,0,0,0];
-
-  // Proportional capex for selected signs
-  const capexFull = 23227712;
-  D.cap_b = dashBBSelected.size > 0 ? Math.round(capexFull * dashBBSelected.size / BB_PILLS.length) : 0;
   const coutBB_dyn = [D.cap_b,0,0,0,0,0,0,0,0,0,0];
   D.cin_b = cinBB_new;
   D.cout_b = coutBB_dyn;
